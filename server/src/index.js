@@ -27,6 +27,7 @@ const app = createApp({ verifyIdToken, store, ai, rooms, mailer, staticDir });
 const server = http.createServer(app);
 app.set('io', attachSocket(server, { store, rooms, ai }));
 
-server.listen(config.port, () => console.log(`MeetSphere listening on http://localhost:${config.port}`));
-
+server.listen(config.port, '0.0.0.0', () => {
+  console.log(`MeetSphere listening on port ${config.port}`);
+});
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => server.close(() => process.exit(0)));
