@@ -17,6 +17,7 @@ export const googleProvider = new GoogleAuthProvider();
 
 /** Chat messages + final transcript segments are written straight to Firestore by the browser. */
 export async function persist(code, sub, item) {
+  if (String(item.uid || '').startsWith('guest:')) return;
   try {
     await setDoc(doc(db, 'meetings', code, sub, item.id), item);
   } catch (e) {

@@ -19,10 +19,10 @@ import { TRANSLATE_LANGS, loadCaptionPrefs, saveCaptionPrefs } from '../lib/lang
 const EMOJI = ['👍', '👏', '😂', '🎉', '❤️', '😮'];
 const PANELS = { chat: 'Chat', ai: 'AI assistant', transcript: 'Live transcript', people: 'People' };
 
-export default function Room({ code, user, stream, initial, info, onLeave, onBack, onEnded }) {
+export default function Room({ code, user, guestToken, inviteUrl, stream, initial, info, onLeave, onBack, onEnded }) {
   const [prefs, setPrefs] = useState(loadCaptionPrefs);
   const muteRef = useRef(() => {});
-  const room = useMeetingRoom({ code, localStream: stream, initial: { ...initial, captionLang: prefs.lang }, onEnded, onHostMute: () => muteRef.current() });
+  const room = useMeetingRoom({ code, localStream: stream, initial: { ...initial, captionLang: prefs.lang }, guestToken, onEnded, onHostMute: () => muteRef.current() });
   const [micOn, setMicOn] = useState(initial.audio && !!stream?.getAudioTracks().length);
   const [camOn, setCamOn] = useState(initial.video && !!stream?.getVideoTracks().length);
   const [ccMenu, setCcMenu] = useState(false);
@@ -55,6 +55,7 @@ export default function Room({ code, user, stream, initial, info, onLeave, onBac
     lang,
     stream,
     code,
+    authToken: guestToken,
     onResult: (r) => {
       if (!r.final) { // throttle interim updates
         const now = Date.now();
@@ -228,7 +229,7 @@ export default function Room({ code, user, stream, initial, info, onLeave, onBac
           <aside className="side" aria-label={PANELS[panel]}>
             <div className="side-head"><h3>{PANELS[panel]}</h3><button className="icon-btn" onClick={() => setPanel(null)} aria-label="Close panel"><X size={18} /></button></div>
             {panel === 'chat' && <ChatPanel messages={room.chat} files={room.files} selfUid={user.uid} onSend={room.sendChat} onSendFile={room.sendFile} />}
-            {panel === 'ai' && <AIPanel code={code} onShare={room.sendChat} />}
+            {panel === 'ai' && <AIPanel code={code} authToken={guestToken} onShare={room.sendChat} />}
             {panel === 'transcript' && <TranscriptPanel lines={room.transcript} selfUid={user.uid} lang={lang} onLang={setLang} supported={speech.supported} engine={speech.engine} error={speech.error} micOn={micOn} translations={room.translations} translating={!!room.captionLang} />}
             {panel === 'people' && <PeoplePanel me={{ name: user.name, isHost, state: { audio: micOn, video: camOn, hand: handUp } }} roster={room.roster} isHost={isHost} locked={room.locked} waitingList={room.waitingList} onAdmit={room.admit} onDeny={room.deny} onMute={room.muteUser} onMuteAll={room.muteAll} onRemove={(id) => window.confirm('Remove this person from the meeting? They will not be able to rejoin.') && room.removeUser(id)} onLock={room.setLock} />}
           </aside>
@@ -281,7 +282,7 @@ export default function Room({ code, user, stream, initial, info, onLeave, onBac
         </div>
       </footer>
 
-      {inviteOpen && <InviteModal code={code} title={room.meta?.title || info?.title || 'Meeting'} scheduledFor={info?.scheduledFor} hasPassword={info?.hasPassword} isHost={isHost} emailEnabled={info?.emailEnabled} onClose={() => setInviteOpen(false)} />}
+      {inviteOpen && <InviteModal code={code} title={room.meta?.title || info?.title || 'Meeting'} scheduledFor={info?.scheduledFor} hasPassword={info?.hasPassword} isHost={isHost} canCreateLink={!guestToken} initialLink={inviteUrl} emailEnabled={info?.emailEnabled} onClose={() => setInviteOpen(false)} />}
 
       {confirmEnd && (
         <div className="modal-bg" role="dialog" aria-modal="true">

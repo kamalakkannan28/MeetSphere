@@ -76,7 +76,7 @@ const QUICK = [
   ['Key points', 'What are the key points and decisions so far?'],
 ];
 
-export function AIPanel({ code, onShare }) {
+export function AIPanel({ code, authToken, onShare }) {
   const [msgs, setMsgs] = useState([{ role: 'assistant', content: 'Hi, I\'m MeetSphere AI. I can see the live transcript and chat, so ask me about the meeting, or anything else, without leaving the call.' }]);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -88,7 +88,7 @@ export function AIPanel({ code, onShare }) {
     setMsgs((m) => [...m, { role: 'user', content: question }]);
     setBusy(true);
     try {
-      const { reply } = await api('/api/ai/chat', { method: 'POST', body: { code, message: question, history } });
+      const { reply } = await api('/api/ai/chat', { method: 'POST', body: { code, message: question, history }, authToken });
       setMsgs((m) => [...m, { role: 'assistant', content: reply }]);
     } catch (e) {
       setMsgs((m) => [...m, { role: 'assistant', content: e.message, error: true }]);
@@ -101,7 +101,7 @@ export function AIPanel({ code, onShare }) {
     setMsgs((m) => [...m, { role: 'user', content: 'Summarize the meeting so far' }]);
     setBusy(true);
     try {
-      const { summary } = await api('/api/ai/summarize', { method: 'POST', body: { code } });
+      const { summary } = await api('/api/ai/summarize', { method: 'POST', body: { code }, authToken });
       setMsgs((m) => [...m, { role: 'assistant', summary, content: '' }]);
     } catch (e) {
       setMsgs((m) => [...m, { role: 'assistant', content: e.message, error: true }]);

@@ -24,6 +24,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginRoute />} />
+      <Route path="/invite/:token" element={<Meeting />} />
       <Route path="/" element={<Protected><Dashboard /></Protected>} />
       <Route path="/meeting/:code" element={<Protected><Meeting /></Protected>} />
       <Route path="/profile" element={<Protected><Profile /></Protected>} />

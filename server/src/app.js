@@ -4,13 +4,15 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { config } from './config.js';
-import { signToken, requireAuth } from './auth.js';
+import { signToken, verifyToken, requireAuth } from './auth.js';
 import { HttpError, asyncHandler, clamp, isValidCode } from './utils.js';
 import { hashPassword } from './security.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const invitationHash = (token) => createHash('sha256').update(token).digest('hex');
 
 /**
  * Builds the Express app. Dependencies are injected so the same code runs against
@@ -57,7 +59,10 @@ export function createApp({ verifyIdToken, store, ai, rooms, mailer, staticDir }
     if (!isValidCode(code)) throw new HttpError(400, 'Invalid meeting code');
     const meeting = await store.getMeeting(code);
     if (!meeting) throw new HttpError(404, 'Meeting not found');
-    if (!meeting.participants?.includes(user.uid)) throw new HttpError(403, 'You did not take part in this meeting');
+    if (user.guest) {
+      const invite = user.roomCode === code ? await store.getInvitationByHash?.(user.invitationHash) : null;
+      if (!invite || invite.code !== code || invite.revoked || invite.expiresAt <= Date.now()) throw new HttpError(403, 'Invitation is no longer valid');
+    } else if (!meeting.participants?.includes(user.uid)) throw new HttpError(403, 'You did not take part in this meeting');
     return meeting;
   };
 
@@ -71,7 +76,11 @@ export function createApp({ verifyIdToken, store, ai, rooms, mailer, staticDir }
     let decoded;
     try {
       decoded = await verifyIdToken(idToken);
-    } catch {
+    } catch (error) {
+      const code = typeof error?.code === 'string' && /^[a-zA-Z0-9_/-]{1,80}$/.test(error.code)
+        ? error.code
+        : 'unknown';
+      console.warn(`[auth] Firebase ID token verification failed (${code})`);
       throw new HttpError(401, 'Invalid Firebase token');
     }
     const user = {
@@ -86,8 +95,57 @@ export function createApp({ verifyIdToken, store, ai, rooms, mailer, staticDir }
 
   app.get('/api/auth/me', requireAuth, (req, res) => res.json({ user: req.user }));
 
+  const loadInvitation = async (token) => {
+    if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{40,50}$/.test(token)) throw new HttpError(404, 'Invitation not found or expired');
+    const hash = invitationHash(token);
+    // Codes are intentionally not embedded in links. Store token -> meeting lookup under a hash.
+    const invite = await store.getInvitationByHash?.(hash);
+    if (!invite || invite.revoked || invite.expiresAt <= Date.now()) throw new HttpError(404, 'Invitation not found or expired');
+    const meeting = await store.getMeeting(invite.code);
+    if (!meeting || meeting.status !== 'active') throw new HttpError(404, 'Invitation not found or expired');
+    return { invite, meeting, hash };
+  };
+
+  app.get('/api/invitations/:token', limiter(60), asyncHandler(async (req, res) => {
+    const { invite, meeting } = await loadInvitation(req.params.token);
+    res.json({ code: meeting.code, title: meeting.title, hostName: meeting.hostName, status: meeting.status,
+      hasPassword: !!meeting.hasPassword, waitingRoom: !!meeting.waitingRoom, scheduledFor: meeting.scheduledFor ?? null,
+      needsPassword: !!meeting.hasPassword, locked: rooms.isLocked(meeting.code),
+      live: rooms.count(meeting.code), max: Math.min(6, config.maxParticipants), expiresAt: invite.expiresAt });
+  }));
+
+  app.post('/api/invitations/:token/session', limiter(30), asyncHandler(async (req, res) => {
+    const { meeting, hash } = await loadInvitation(req.params.token);
+    const name = clamp(req.body?.name, 60);
+    if (name.length < 1) throw new HttpError(400, 'Enter a display name');
+    const user = { uid: `guest:${randomUUID()}`, name, email: '', picture: '', emailVerified: false };
+    const token = signToken(user, { guest: true, roomCode: meeting.code, invitationHash: hash });
+    res.json({ token, user: { ...user, guest: true }, meeting: { code: meeting.code, title: meeting.title,
+      hostName: meeting.hostName, status: meeting.status, hasPassword: !!meeting.hasPassword, waitingRoom: !!meeting.waitingRoom,
+      needsPassword: !!meeting.hasPassword, locked: rooms.isLocked(meeting.code), scheduledFor: meeting.scheduledFor ?? null,
+      live: rooms.count(meeting.code), max: Math.min(6, config.maxParticipants) } });
+  }));
+
   // ------------------------------------------------------------ meetings
   app.use('/api/meetings', requireAuth, limiter(60, byUser));
+
+  const createInvitation = async (code, requesterUid, hostOnly = true) => {
+    if (!isValidCode(code)) throw new HttpError(400, 'Invalid meeting code');
+    const meeting = await store.getMeeting(code);
+    if (!meeting) throw new HttpError(404, 'Meeting not found');
+    if (meeting.hostUid !== requesterUid && (hostOnly || !meeting.participants?.includes(requesterUid))) throw new HttpError(403, 'Only meeting participants can create invitations');
+    if (meeting.status !== 'active') throw new HttpError(409, 'Meeting is not active');
+    const token = randomBytes(32).toString('base64url');
+    const tokenHash = invitationHash(token);
+    const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+    await store.createInvitation(code, { code, tokenHash, createdBy: hostUid, createdAt: Date.now(), expiresAt, revoked: false });
+    return { token, expiresAt, link: `${config.clientUrls[0]}/invite/${token}` };
+  };
+
+  app.post('/api/meetings/:code/invitation', asyncHandler(async (req, res) => {
+    const invitation = await createInvitation(req.params.code, req.user.uid, false);
+    res.status(201).json(invitation);
+  }));
 
   app.post('/api/meetings', asyncHandler(async (req, res) => {
     if (config.requireVerifiedEmail && !req.user.emailVerified) throw new HttpError(403, 'Verify your email address before creating meetings.');
@@ -120,7 +178,7 @@ export function createApp({ verifyIdToken, store, ai, rooms, mailer, staticDir }
       hasPassword: !!m.hasPassword, waitingRoom: !!m.waitingRoom, scheduledFor: m.scheduledFor ?? null,
       locked: rooms.isLocked(m.code),
       needsPassword: !!m.hasPassword && !isHost && !m.participants?.includes(req.user.uid),
-      live: rooms.count(m.code), max: config.maxParticipants,
+      live: rooms.count(m.code), max: Math.min(6, config.maxParticipants),
       emailEnabled: !!mailer?.configured,
     });
   }));
@@ -147,7 +205,8 @@ export function createApp({ verifyIdToken, store, ai, rooms, mailer, staticDir }
     const raw = Array.isArray(req.body?.emails) ? req.body.emails : [];
     const emails = [...new Set(raw.map((e) => String(e).trim().toLowerCase()).filter((e) => EMAIL_RE.test(e) && e.length <= 254))].slice(0, 20);
     if (!emails.length) throw new HttpError(400, 'Enter at least one valid email address');
-    const link = `${config.clientUrls[0]}/meeting/${code}`;
+    const invitation = await createInvitation(code, req.user.uid);
+    const link = invitation.link;
     const when = m.scheduledFor ? `\nWhen: ${new Date(m.scheduledFor).toUTCString()}` : '';
     const pw = m.hasPassword ? '\nThis meeting is password protected. The host will share the password separately.' : '';
     const text = `${req.user.name} invited you to "${m.title}" on MeetSphere.${when}\nJoin: ${link}${pw}`;
@@ -186,7 +245,17 @@ export function createApp({ verifyIdToken, store, ai, rooms, mailer, staticDir }
   }));
 
   // ------------------------------------------------------------------ AI
-  app.use('/api/ai', requireAuth);
+  const requireAiAuth = asyncHandler(async (req, _res, next) => {
+    const header = req.headers.authorization || '';
+    if (!header.startsWith('Bearer ')) throw new HttpError(401, 'Missing token');
+    try { req.user = verifyToken(header.slice(7)); } catch { throw new HttpError(401, 'Invalid or expired token'); }
+    if (req.user.guest) {
+      const invite = await store.getInvitationByHash?.(req.user.invitationHash);
+      if (!invite || invite.code !== req.user.roomCode || invite.revoked || invite.expiresAt <= Date.now()) throw new HttpError(401, 'Invitation is no longer valid');
+    }
+    next();
+  });
+  app.use('/api/ai', requireAiAuth);
   const aiLimit = limiter(20, byUser);
 
   app.post('/api/ai/chat', aiLimit, asyncHandler(async (req, res) => {

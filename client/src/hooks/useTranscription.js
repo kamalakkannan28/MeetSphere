@@ -7,10 +7,10 @@ import { hasBrowserSpeech, isInstalledShell, canRecordAudio } from '../lib/platf
  *  - "browser": Web Speech API (Chrome / Edge / Safari). Free, instant, interim words.
  *  - "cloud":   server-side Whisper. Used in the desktop and mobile apps (no Web Speech there) and in browsers without it.
  */
-export function useTranscription({ enabled, lang, stream, code, onResult }) {
+export function useTranscription({ enabled, lang, stream, code, authToken, onResult }) {
   const engine = hasBrowserSpeech && !isInstalledShell ? 'browser' : 'cloud';
   const browser = useSpeechRecognition({ enabled: enabled && engine === 'browser', lang, onResult });
-  const cloud = useCloudRecognition({ enabled: enabled && engine === 'cloud', lang, stream, code, onResult });
+  const cloud = useCloudRecognition({ enabled: enabled && engine === 'cloud', lang, stream, code, authToken, onResult });
   const active = engine === 'browser' ? browser : cloud;
   return { engine, supported: engine === 'browser' ? browser.supported : canRecordAudio, error: active.error };
 }

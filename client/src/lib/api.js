@@ -8,15 +8,15 @@ export const getToken = () => session?.token;
 export const setRefresher = (fn) => { refresher = fn; };
 
 /** fetch wrapper: adds the JWT, retries once after re-exchanging the Firebase token on 401. */
-export async function api(path, { method = 'GET', body } = {}, retry = true) {
+export async function api(path, { method = 'GET', body, authToken } = {}, retry = true) {
   const res = await fetch(`${API_URL}${path}`, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(session && { Authorization: `Bearer ${session.token}` }) },
+    headers: { 'Content-Type': 'application/json', ...((authToken || session?.token) && { Authorization: `Bearer ${authToken || session.token}` }) },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (res.status === 401 && retry && refresher && session) {
     await refresher();
-    return api(path, { method, body }, false);
+    return api(path, { method, body, authToken }, false);
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
@@ -26,15 +26,15 @@ export async function api(path, { method = 'GET', body } = {}, retry = true) {
 export const exchangeFirebaseToken = (idToken) => api('/api/auth/session', { method: 'POST', body: { idToken } }, false);
 
 /** POST a binary body (e.g. a short audio clip) with the JWT; retries once after a token refresh. */
-export async function apiBinary(path, blob, retry = true) {
+export async function apiBinary(path, blob, retry = true, authToken) {
   const res = await fetch(`${API_URL}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': blob.type || 'application/octet-stream', ...(session && { Authorization: `Bearer ${session.token}` }) },
+    headers: { 'Content-Type': blob.type || 'application/octet-stream', ...((authToken || session?.token) && { Authorization: `Bearer ${authToken || session.token}` }) },
     body: blob,
   });
   if (res.status === 401 && retry && refresher && session) {
     await refresher();
-    return apiBinary(path, blob, false);
+    return apiBinary(path, blob, false, authToken);
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);

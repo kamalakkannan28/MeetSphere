@@ -17,7 +17,8 @@ async function getMedia() {
 }
 
 export default function Meeting() {
-  const { code } = useParams();
+  const { code: routeCode, token: inviteToken } = useParams();
+  const code = routeCode || null;
   const { user } = useAuth();
   const nav = useNavigate();
   const [info, setInfo] = useState(null);
@@ -31,9 +32,12 @@ export default function Meeting() {
   const [password, setPassword] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);
   const [reopening, setReopening] = useState(false);
+  const [guestName, setGuestName] = useState('');
+  const [guestUser, setGuestUser] = useState(null);
+  const [guestToken, setGuestToken] = useState('');
   const streamRef = useRef(null);
 
-  const refresh = () => api(`/api/meetings/${code}`).then(setInfo).catch((e) => setErr(e.message));
+  const refresh = () => (inviteToken ? api(`/api/invitations/${inviteToken}`) : api(`/api/meetings/${code}`)).then(setInfo).catch((e) => setErr(e.message));
   const reopen = async () => {
     setReopening(true);
     try { await api(`/api/meetings/${code}/reopen`, { method: 'POST' }); await refresh(); } catch (e) { setErr(e.message); }
@@ -48,7 +52,20 @@ export default function Meeting() {
       streamRef.current = s; setStream(s); setMediaReady(true);
     });
     return () => { cancelled = true; streamRef.current?.getTracks().forEach((t) => t.stop()); };
-  }, [code]);
+  }, [code, inviteToken]);
+
+  const joinMeeting = async () => {
+    if (inviteToken && !guestToken) {
+      try {
+        const s = await api(`/api/invitations/${inviteToken}/session`, { method: 'POST', body: { name: guestName } });
+        setGuestToken(s.token); setGuestUser(s.user);
+        setInfo((v) => ({ ...v, ...s.meeting, isHost: false, needsPassword: !!s.meeting.hasPassword }));
+        setJoined(true);
+      } catch (e) { setErr(e.message); }
+      return;
+    }
+    setJoined(true);
+  };
 
   const hasAudio = !!stream?.getAudioTracks().length;
   const hasVideo = !!stream?.getVideoTracks().length;
@@ -72,7 +89,7 @@ export default function Meeting() {
 
   if (joined) {
     return (
-      <Room code={code} user={user} stream={stream}
+      <Room code={info.code} user={guestUser || user} guestToken={guestToken} inviteUrl={inviteToken ? `${window.location.origin}/invite/${inviteToken}` : ''} stream={stream}
         initial={{ audio: mic && hasAudio, video: cam && hasVideo, lang, password }} info={info}
         onBack={() => setJoined(false)} onLeave={() => nav('/')} onEnded={() => nav(`/history/${code}`)} />
     );
@@ -81,7 +98,7 @@ export default function Meeting() {
   return (
     <div className="lobby">
       <div className="lobby-preview">
-        <VideoTile local stream={stream} name={user.name} audio={mic && hasAudio} video={cam && hasVideo} />
+        <VideoTile local stream={stream} name={guestUser?.name || user?.name || guestName || 'Guest'} audio={mic && hasAudio} video={cam && hasVideo} />
         <div className="lobby-ctrls">
           <button className={`ctrl ${mic && hasAudio ? '' : 'off'}`} disabled={!hasAudio} onClick={() => { apply('audio', !mic); setMic(!mic); }} aria-label="Toggle microphone">{mic && hasAudio ? <Mic size={20} /> : <MicOff size={20} />}</button>
           <button className={`ctrl ${cam && hasVideo ? '' : 'off'}`} disabled={!hasVideo} onClick={() => { apply('video', !cam); setCam(!cam); }} aria-label="Toggle camera">{cam && hasVideo ? <Video size={20} /> : <VideoOff size={20} />}</button>
@@ -102,14 +119,17 @@ export default function Meeting() {
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" placeholder="Ask the host for the password" />
           </label>
         )}
+        {inviteToken && !guestUser && <label className="field">Your display name
+          <input value={guestName} onChange={(e) => setGuestName(e.target.value)} maxLength={60} autoComplete="name" placeholder="Enter your name" />
+        </label>}
         {info.waitingRoom && !info.isHost && <p className="muted">The host will let you in after you press Join.</p>}
         <label className="field">Language you will speak (for live transcription)
           <select value={lang} onChange={(e) => setLang(e.target.value)}>{LANGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
         </label>
-        <button className="btn primary big" onClick={() => setJoined(true)} disabled={info.live >= info.max || (info.needsPassword && !password)}>{info.live >= info.max ? 'Meeting is full' : 'Join now'}</button>
+        <button className="btn primary big" onClick={joinMeeting} disabled={info.live >= info.max || (info.needsPassword && !password) || (inviteToken && !guestName.trim())}>{info.live >= info.max ? 'Meeting is full' : 'Join now'}</button>
         <button className="btn" onClick={() => setInviteOpen(true)}><UserPlus size={16} /> Invite or add to calendar</button>
         <button className="btn" onClick={() => nav('/')}>Cancel</button>
-        {inviteOpen && <InviteModal code={code} title={info.title} scheduledFor={info.scheduledFor} hasPassword={info.hasPassword} isHost={info.isHost} emailEnabled={info.emailEnabled} onClose={() => setInviteOpen(false)} />}
+        {inviteOpen && <InviteModal code={info.code} title={info.title} scheduledFor={info.scheduledFor} hasPassword={info.hasPassword} isHost={info.isHost} canCreateLink={!inviteToken} initialLink={inviteToken ? `${window.location.origin}/invite/${inviteToken}` : ''} emailEnabled={info.emailEnabled} onClose={() => setInviteOpen(false)} />}
       </div>
     </div>
   );

@@ -8,7 +8,7 @@ import { persist } from '../lib/firebase.js';
  * One hook owns the live meeting: Socket.IO connection, roster, WebRTC mesh,
  * chat, live captions and transcript. Chat/final transcript lines are persisted to Firestore.
  */
-export function useMeetingRoom({ code, localStream, initial, onEnded, onHostMute }) {
+export function useMeetingRoom({ code, localStream, initial, guestToken, onEnded, onHostMute }) {
   const [status, setStatus] = useState('connecting'); // connecting | waiting | joined | reconnecting | error
   const [error, setError] = useState('');
   const [meta, setMeta] = useState(null);
@@ -41,7 +41,7 @@ export function useMeetingRoom({ code, localStream, initial, onEnded, onHostMute
   streamRef.current = localStream;
 
   useEffect(() => {
-    const socket = io(API_URL || undefined, { auth: (cb) => cb({ token: getToken() }), transports: ['websocket', 'polling'] });
+    const socket = io(API_URL || undefined, { auth: (cb) => cb({ token: guestToken || getToken() }), transports: ['websocket', 'polling'] });
     socketRef.current = socket;
     let alive = true;
     const addUnique = (setter) => (item) => setter((l) => (l.some((x) => x.id === item.id) ? l : [...l, item].sort((a, b) => a.ts - b.ts)));
@@ -138,7 +138,7 @@ export function useMeetingRoom({ code, localStream, initial, onEnded, onHostMute
       fileUrls.current.forEach((u) => URL.revokeObjectURL(u));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code]);
+  }, [code, guestToken]);
 
   const emit = (ev, payload, cb) => socketRef.current?.emit(ev, payload, cb);
 

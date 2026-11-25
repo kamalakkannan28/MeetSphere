@@ -53,6 +53,22 @@ export function createFirestoreStore(db, FieldValue) {
       return snap.exists ? snap.data() : null;
     },
 
+    async createInvitation(code, invitation) {
+      await meetings.doc(code).collection('invitations').doc(invitation.tokenHash).create(invitation);
+    },
+
+    async getInvitation(code, tokenHash) {
+      const snap = await meetings.doc(code).collection('invitations').doc(tokenHash).get();
+      return snap.exists ? snap.data() : null;
+    },
+
+    async getInvitationByHash(tokenHash) {
+      const snap = await db.collectionGroup('invitations').where('tokenHash', '==', tokenHash).limit(1).get();
+      if (snap.empty) return null;
+      const data = snap.docs[0].data();
+      return data;
+    },
+
     async reopenMeeting(code) {
       await meetings.doc(code).update({ status: 'active', reopenedAt: Date.now(), endedAt: FieldValue.delete() });
     },

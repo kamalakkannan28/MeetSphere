@@ -2,7 +2,7 @@ const pad = (n) => String(n).padStart(2, '0');
 const stamp = (d) => `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}00Z`;
 const esc = (t) => String(t).replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;');
 
-export const inviteLink = (code) => `${window.location.origin}/meeting/${code}`;
+export const inviteLink = (code, link) => link || `${window.location.origin}/meeting/${code}`;
 
 /** Start/end for a calendar entry: the scheduled time, or "now" for instant meetings (1 hour). */
 export function eventTimes(scheduledFor) {
@@ -10,22 +10,22 @@ export function eventTimes(scheduledFor) {
   return { start, end: new Date(start.getTime() + 3_600_000) };
 }
 
-export function googleCalendarUrl({ title, code, scheduledFor }) {
+export function googleCalendarUrl({ title, code, scheduledFor, link }) {
   const { start, end } = eventTimes(scheduledFor);
   const p = new URLSearchParams({
     action: 'TEMPLATE', text: title, dates: `${stamp(start)}/${stamp(end)}`,
-    details: `Join the MeetSphere meeting: ${inviteLink(code)}`, location: inviteLink(code),
+    details: `Join the MeetSphere meeting: ${inviteLink(code, link)}`, location: inviteLink(code, link),
   });
   return `https://calendar.google.com/calendar/render?${p}`;
 }
 
-export function downloadIcs({ title, code, scheduledFor }) {
+export function downloadIcs({ title, code, scheduledFor, link }) {
   const { start, end } = eventTimes(scheduledFor);
   const ics = [
     'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//MeetSphere//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
     'BEGIN:VEVENT', `UID:${code}@meetsphere`, `DTSTAMP:${stamp(new Date())}`,
     `DTSTART:${stamp(start)}`, `DTEND:${stamp(end)}`,
-    `SUMMARY:${esc(title)}`, `DESCRIPTION:${esc(`Join the MeetSphere meeting: ${inviteLink(code)}`)}`, `LOCATION:${esc(inviteLink(code))}`, `URL:${inviteLink(code)}`,
+    `SUMMARY:${esc(title)}`, `DESCRIPTION:${esc(`Join the MeetSphere meeting: ${inviteLink(code, link)}`)}`, `LOCATION:${esc(inviteLink(code, link))}`, `URL:${inviteLink(code, link)}`,
     'END:VEVENT', 'END:VCALENDAR',
   ].join('\r\n');
   const a = document.createElement('a');
@@ -35,9 +35,9 @@ export function downloadIcs({ title, code, scheduledFor }) {
   URL.revokeObjectURL(a.href);
 }
 
-export function mailtoInvite({ title, code, scheduledFor, hasPassword }) {
+export function mailtoInvite({ title, code, scheduledFor, link, hasPassword }) {
   const when = scheduledFor ? `\nWhen: ${new Date(scheduledFor).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' })}` : '';
   const pw = hasPassword ? '\n(This meeting is password protected. I will send the password separately.)' : '';
-  const body = `Join my MeetSphere meeting "${title}".${when}\n${inviteLink(code)}${pw}`;
+  const body = `Join my MeetSphere meeting "${title}".${when}\n${inviteLink(code, link)}${pw}`;
   return `mailto:?subject=${encodeURIComponent(`Invitation: ${title}`)}&body=${encodeURIComponent(body)}`;
 }

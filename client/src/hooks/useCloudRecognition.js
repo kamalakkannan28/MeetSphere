@@ -9,7 +9,7 @@ const MIN_LEVEL = 0.015; // clips quieter than this are skipped (saves API calls
  * Records the microphone in short clips, skips silence, uploads each clip to the MeetSphere server
  * (which calls Groq Whisper) and reports the text as a final result. Captions lag by a few seconds.
  */
-export function useCloudRecognition({ enabled, lang, stream, code, onResult }) {
+export function useCloudRecognition({ enabled, lang, stream, code, authToken, onResult }) {
   const cb = useRef(onResult);
   cb.current = onResult;
   const [error, setError] = useState('');
@@ -47,7 +47,7 @@ export function useCloudRecognition({ enabled, lang, stream, code, onResult }) {
     const upload = (blob) => {
       queue = queue.then(async () => {
         try {
-          const { text } = await apiBinary(`/api/ai/transcribe?code=${encodeURIComponent(code)}&lang=${encodeURIComponent(lang)}`, blob);
+          const { text } = await apiBinary(`/api/ai/transcribe?code=${encodeURIComponent(code)}&lang=${encodeURIComponent(lang)}`, blob, true, authToken);
           setError('');
           if (!stopped && text) cb.current({ text, final: true });
         } catch (e) { setError(e.message); }
@@ -78,7 +78,7 @@ export function useCloudRecognition({ enabled, lang, stream, code, onResult }) {
       try { if (rec && rec.state !== 'inactive') rec.stop(); } catch { /* noop */ }
       ctx?.close().catch(() => {});
     };
-  }, [enabled, lang, stream, code]);
+  }, [enabled, lang, stream, code, authToken]);
 
   return { supported: !!window.MediaRecorder, error };
 }

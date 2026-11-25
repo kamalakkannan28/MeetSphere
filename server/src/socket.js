@@ -48,19 +48,25 @@ export function attachSocket(httpServer, { store, rooms, ai }) {
     const isHost = () => !!code() && !!rooms.getPeer(code(), socket.id)?.isHost;
 
     socket.on('room:join', async (payload, cb) => {
+      let reserved = false;
       try {
         const roomCode = payload?.code;
         if (!isValidCode(roomCode)) return ack(cb, { ok: false, error: 'Invalid meeting code' });
         if (code()) return ack(cb, { ok: false, error: 'Already in a meeting' });
-        if (config.requireVerifiedEmail && !user.emailVerified) return ack(cb, { ok: false, error: 'Verify your email address (Profile page) to join meetings.' });
+        if (!user.guest && config.requireVerifiedEmail && !user.emailVerified) return ack(cb, { ok: false, error: 'Verify your email address (Profile page) to join meetings.' });
         const meeting = await store.getMeeting(roomCode);
         if (!meeting) return ack(cb, { ok: false, error: 'Meeting not found' });
         if (meeting.status === 'ended') return ack(cb, { ok: false, error: 'This meeting has ended' });
+        if (user.guest) {
+          if (user.roomCode !== roomCode) return ack(cb, { ok: false, error: 'This invitation is for a different meeting.' });
+          const invitation = await store.getInvitationByHash?.(user.invitationHash);
+          if (!invitation || invitation.code !== roomCode || invitation.revoked || invitation.expiresAt <= Date.now()) return ack(cb, { ok: false, error: 'Invitation not found or expired' });
+        }
         if (rooms.isBanned(roomCode, user.uid)) return ack(cb, { ok: false, error: 'You were removed from this meeting by the host.' });
 
         socket.data.captionLang = LANGUAGES[payload.captionLang] ? payload.captionLang : '';
         const host = meeting.hostUid === user.uid;
-        const known = host || meeting.participants?.includes(user.uid) || rooms.isAdmitted(roomCode, user.uid);
+        const known = host || rooms.isAdmitted(roomCode, user.uid) || (!user.guest && meeting.participants?.includes(user.uid));
         if (!known) {
           if (rooms.isLocked(roomCode)) return ack(cb, { ok: false, error: 'This meeting is locked by the host.' });
           if (meeting.hasPassword) {
@@ -79,16 +85,19 @@ export function attachSocket(httpServer, { store, rooms, ai }) {
             return ack(cb, { ok: true, waiting: true });
           }
         }
-        if (rooms.count(roomCode) >= config.maxParticipants) return ack(cb, { ok: false, error: `Meeting is full (max ${config.maxParticipants})` });
+        const participantLimit = Math.min(6, config.maxParticipants);
+        if (!rooms.reserveJoin(roomCode, participantLimit, host)) return ack(cb, { ok: false, error: `Meeting is full (max ${participantLimit})` });
+        reserved = true;
         // registers the user as a participant so Firestore rules let them read/write this meeting's data
-        await store.addParticipant(roomCode, user.uid);
-        if (socket.disconnected) return;
+        if (!user.guest) await store.addParticipant(roomCode, user.uid);
+        if (socket.disconnected) { rooms.releaseJoin(roomCode); reserved = false; return; }
 
         const peer = {
-          uid: user.uid, name: user.name, picture: user.picture, isHost: host,
+          uid: user.uid, name: user.name, picture: user.picture, isHost: host, isGuest: !!user.guest,
           audio: payload.audio !== false, video: payload.video !== false, screen: false, hand: false, recording: false,
         };
         const existing = rooms.join(roomCode, socket.id, peer); // synchronous: no join/offer races
+        reserved = false; // join consumes the reserved capacity slot
         socket.data.code = roomCode;
         socket.data.waitingCode = null;
         rooms.removeWaiting(roomCode, socket.id);
@@ -108,6 +117,7 @@ export function attachSocket(httpServer, { store, rooms, ai }) {
           history: rooms.recent(roomCode),
         });
       } catch (e) {
+        if (reserved) rooms.releaseJoin(payload?.code);
         console.error('[room:join]', e);
         ack(cb, { ok: false, error: 'Could not join the meeting' });
       }

@@ -13,7 +13,7 @@ export function createRoomStore() {
   const ensure = (code) => {
     if (!rooms.has(code)) {
       rooms.set(code, {
-        peers: new Map(), waiting: new Map(), admitted: new Set(), banned: new Set(),
+        peers: new Map(), reservations: 0, waiting: new Map(), admitted: new Set(), banned: new Set(),
         locked: false, chat: [], speech: [], strokes: [],
       });
     }
@@ -26,6 +26,15 @@ export function createRoomStore() {
 
   return {
     count: (code) => rooms.get(code)?.peers.size ?? 0,
+    reserveJoin(code, max, isHost = false) {
+      const room = ensure(code);
+      const hostPresent = [...room.peers.values()].some((p) => p.isHost);
+      const reservedHostSlot = !hostPresent && !isHost ? 1 : 0;
+      if (room.peers.size + room.reservations + reservedHostSlot >= max) return false;
+      room.reservations += 1;
+      return true;
+    },
+    releaseJoin(code) { const r = rooms.get(code); if (r) r.reservations = Math.max(0, r.reservations - 1); },
     hasPeer: (code, id) => !!rooms.get(code)?.peers.has(id),
     getPeer: (code, id) => rooms.get(code)?.peers.get(id),
     hostIds: (code) => [...(rooms.get(code)?.peers.entries() ?? [])].filter(([, p]) => p.isHost).map(([id]) => id),
@@ -33,6 +42,7 @@ export function createRoomStore() {
 
     join(code, id, peer) {
       const room = ensure(code);
+      room.reservations = Math.max(0, room.reservations - 1);
       const existing = [...room.peers.entries()].map(([sid, p]) => ({ id: sid, ...p }));
       room.peers.set(id, peer);
       return existing;

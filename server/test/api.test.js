@@ -14,6 +14,7 @@ const { generateCode } = await import('../src/utils.js');
 // ---- fakes -------------------------------------------------------------
 const db = new Map();
 const secrets = new Map();
+const invitations = new Map();
 const sent = [];
 const mailer = { configured: true, sendInvite: async (m) => { sent.push(m); } };
 const store = {
@@ -23,6 +24,8 @@ const store = {
     db.set(code, m); if (passwordHash) secrets.set(code, { passwordHash }); return m;
   },
   async getSecret(c) { return secrets.get(c) ?? null; },
+  async createInvitation(code, invite) { invitations.set(invite.tokenHash, invite); },
+  async getInvitationByHash(hash) { return invitations.get(hash) ?? null; },
   async reopenMeeting(c) { db.get(c).status = 'active'; },
   async getMeeting(c) { return db.get(c) ?? null; },
   async addParticipant(c, uid) { const m = db.get(c); if (!m.participants.includes(uid)) m.participants.push(uid); },

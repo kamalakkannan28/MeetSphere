@@ -108,10 +108,15 @@ in `server/.env` if Groq retires it. See console.groq.com/docs/models.)
 
 ### 3. Configure
 ```bash
-cp server/.env.example server/.env      # set JWT_SECRET, GROQ_API_KEY; keep FIREBASE_SERVICE_ACCOUNT_PATH
+cp server/.env.example server/.env      # set JWT_SECRET, GROQ_API_KEY; verify FIREBASE_PROJECT_ID matches the service account
 cp client/.env.example client/.env      # paste the Firebase web config values
 ```
 Generate a JWT secret: `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`
+
+For Render, set `FIREBASE_PROJECT_ID` to `meetsphere-cce1a`. It must match both
+`VITE_FIREBASE_PROJECT_ID` in the Vercel build environment and the service account's `project_id`.
+If using `FIREBASE_PRIVATE_KEY` instead of a service-account file, also set `FIREBASE_CLIENT_EMAIL`;
+do not paste or commit the private key into source control.
 
 ### 4. Install and run
 ```bash
@@ -224,6 +229,10 @@ These use in-memory fakes, so no Firebase or Groq account is needed.
   `TURN_CREDENTIAL` in `server/.env` (e.g. a free/trial TURN service or your own coturn).
 * Suggested hosting: front-end on Vercel/Netlify/Firebase Hosting (`npm run build`, publish `client/dist`), back-end on
   Render/Railway/a VPS (needs WebSocket support). Set `CLIENT_URL` on the server to the front-end origin.
+* For a split Vercel/Render deployment, set Vercel's `VITE_API_URL` to the Render service origin (without a trailing slash)
+  and set its `VITE_FIREBASE_*` values from the Firebase web app. On Render, set `CLIENT_URL` to the Vercel origin and
+  `FIREBASE_PROJECT_ID` to `meetsphere-cce1a`; configure Firebase Admin credentials using a secure service-account file
+  or `FIREBASE_CLIENT_EMAIL` and `FIREBASE_PRIVATE_KEY`. Redeploy the frontend after changing Vite environment variables.
 
 ## Design notes and known limits (good material for your viva)
 * **Topology:** full-mesh WebRTC, so each participant uploads to every other one. Capped at `MAX_PARTICIPANTS` (default 6).
@@ -245,7 +254,7 @@ These use in-memory fakes, so no Firebase or Groq account is needed.
 ## Troubleshooting
 | Symptom | Fix |
 |---|---|
-| "server rejected the session" after login | Backend not running, wrong `VITE_API_URL`, or bad service-account file |
+| "server rejected the session" after login | Check `VITE_API_URL`, then confirm Render `FIREBASE_PROJECT_ID` matches Vercel `VITE_FIREBASE_PROJECT_ID` and the Firebase Admin service account's `project_id`; inspect Render logs for the safe Firebase auth error code |
 | Dashboard says Firestore rules not published | Do step 1.3 (publish `firestore.rules`) |
 | Translated captions never appear | Set `GROQ_API_KEY`, restart the server, and pick a language in the CC menu (it must differ from the speaker's) |
 | No captions | Use Chrome/Edge, allow the mic, unmute, and pick your speaking language in the Transcript panel |
