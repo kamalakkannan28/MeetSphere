@@ -1,0 +1,76 @@
+{
+  "name": "meetsphere-desktop",
+  "productName": "MeetSphere",
+  "version": "1.0.0",
+  "description": "MeetSphere desktop app (Windows, macOS, Linux) - AI-powered video meetings",
+  "main": "src/main.js",
+  "author": {
+    "name": "MeetSphere Team",
+    "email": "meetsphere@example.com"
+  },
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux"
+  },
+  "build": {
+    "appId": "com.meetsphere.desktop",
+    "productName": "MeetSphere",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "app.config.json",
+      "package.json"
+    ],
+    "protocols": [
+      {
+        "name": "MeetSphere meeting link",
+        "schemes": [
+          "meetsphere"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.business",
+      "icon": "build/icon.png",
+      "extendInfo": {
+        "NSCameraUsageDescription": "MeetSphere uses your camera for video meetings.",
+        "NSMicrophoneUsageDescription": "MeetSphere uses your microphone for meetings and live captions."
+      }
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Network;VideoConference",
+      "icon": "build/icon.png",
+      "maintainer": "MeetSphere Team <meetsphere@example.com>"
+    }
+  },
+  "devDependencies": {
+    "electron": "^45.3.0",
+    "electron-builder": "^26.18.0"
+  }
+}

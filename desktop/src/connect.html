@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>MeetSphere</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0e1224; color: #eef0ff; font-family: 'Segoe UI', system-ui, sans-serif; }
+  main { width: min(480px, 92vw); background: #171c35; border: 1px solid #2a3057; border-radius: 16px; padding: 28px; }
+  h1 { margin: 0 0 6px; font-size: 1.5rem; }
+  p { color: #aeb5e6; line-height: 1.5; }
+  .err { background: #4a2330; color: #ffd9de; padding: 9px 12px; border-radius: 10px; font-size: .9rem; }
+  label { display: block; font-weight: 700; font-size: .85rem; margin: 16px 0 6px; }
+  input { width: 100%; box-sizing: border-box; padding: 11px 13px; border-radius: 10px; border: 1.5px solid #2a3057; background: #0f1330; color: #fff; font: inherit; }
+  .row { display: flex; gap: 10px; margin-top: 16px; }
+  button { flex: 1; padding: 11px 16px; border-radius: 10px; border: 1.5px solid #2a3057; background: transparent; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+  button.primary { background: #2b3dff; border-color: #2b3dff; }
+  button:focus-visible, input:focus-visible { outline: 3px solid #ffc94d; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Connect to MeetSphere</h1>
+  <p id="msg">Enter the address of your MeetSphere server.</p>
+  <p class="err" id="err" hidden></p>
+  <label for="url">Server address</label>
+  <input id="url" placeholder="https://meet.example.com" autocomplete="off" spellcheck="false">
+  <div class="row">
+    <button id="retry">Retry</button>
+    <button id="save" class="primary">Save and connect</button>
+  </div>
+</main>
+<script>
+  const q = new URLSearchParams(location.search);
+  const $ = (id) => document.getElementById(id);
+  $('url').value = q.get('url') || '';
+  if (q.get('error')) {
+    $('err').hidden = false;
+    $('err').textContent = `Could not reach ${q.get('url')} (${q.get('error').replace('ERR_', '').replaceAll('_', ' ').toLowerCase()}). Check that the server is running and the address is right.`;
+  }
+  $('save').onclick = async () => {
+    const r = await window.meetsphereDesktop.setServerUrl($('url').value);
+    if (!r.ok) { $('err').hidden = false; $('err').textContent = r.error || 'Invalid address'; }
+  };
+  $('retry').onclick = () => window.meetsphereDesktop.retry();
+  $('url').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('save').click(); });
+</script>
+</body>
+</html>

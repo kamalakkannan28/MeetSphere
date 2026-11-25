@@ -1,0 +1,23 @@
+{
+  "name": "meetsphere",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MeetSphere - AI-powered video meetings with live transcription (CSE final year project)",
+  "scripts": {
+    "install:all": "npm install && npm install --prefix server && npm install --prefix client",
+    "dev": "concurrently -n server,client -c cyan,magenta \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "server": "npm run dev --prefix server",
+    "client": "npm run dev --prefix client",
+    "build": "npm run build --prefix client",
+    "test": "npm test --prefix server",
+    "app": "npm run build --prefix client && npm start --prefix server",
+    "desktop:install": "npm install --prefix desktop",
+    "desktop": "npm start --prefix desktop",
+    "desktop:dist": "npm run dist --prefix desktop",
+    "mobile:install": "npm install --prefix mobile",
+    "mobile:sync": "npm run sync --prefix mobile"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
